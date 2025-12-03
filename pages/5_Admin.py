@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Image  # added Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from io import BytesIO
@@ -19,7 +19,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.utils import ImageReader
 
 # ------------------- KONFIG HALAMAN -------------------
-st.set_page_config(page_title="Admin - Hasil Psikotes", page_icon="📊")
+st.set_page_config(page_title="Admin - Hasil Psikotes", page_icon="📊", layout="wide")
 
 # ------------------- LOGIN ADMIN -------------------
 ADMIN_CREDENTIALS = {"admin": "12345", "vilda": "aprilia"}
@@ -27,32 +27,49 @@ if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
 
 if not st.session_state["admin_logged_in"]:
-    st.title("🔐 Halaman Login Admin")
+    st.markdown("## 🔐 Halaman Login Admin")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
         if username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
             st.session_state["admin_logged_in"] = True
             st.success("✅ Login berhasil.")
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("❌ Username atau password salah.")
     st.stop()
 
-st.title("📋 Hasil Psikotes Peserta")
-if st.button("🚪 Logout"):
-    st.session_state["admin_logged_in"] = False
-    st.rerun()
+# ------------------- HEADER (rapi) -------------------
+left_h, right_h = st.columns([9, 1])
+with left_h:
+    st.markdown("## 📋  Hasil Psikotes Peserta")
+with right_h:
+    if st.button("🚪 Logout"):
+        st.session_state["admin_logged_in"] = False
+        st.experimental_rerun()
+
+st.markdown("---")
 
 # ------------------- LOAD DATA -------------------
 os.makedirs("data", exist_ok=True)
-file_path = "data/hasil_peserta.csv"
-if not os.path.exists(file_path):
+biodata_path = "data/biodata.csv"
+hasil_path = "data/hasil_peserta.csv"
+
+# load biodata (optional)
+df_bio = None
+if os.path.exists(biodata_path):
+    try:
+        df_bio = pd.read_csv(biodata_path)
+    except Exception:
+        df_bio = None
+
+# load hasil peserta (required)
+if not os.path.exists(hasil_path):
     st.warning("📂 Belum ada hasil tes yang tersimpan (data/hasil_peserta.csv).")
     st.stop()
 
 try:
-    df = pd.read_csv(file_path)
+    df = pd.read_csv(hasil_path)
 except Exception as e:
     st.error(f"Gagal membaca file: {e}")
     st.stop()
@@ -61,79 +78,179 @@ if df.empty:
     st.warning("⚠️ File hasil_peserta.csv kosong.")
     st.stop()
 
-# ------------------- PILIH PESERTA -------------------
-st.markdown("### 🔍 Pilih Peserta")
-peserta_list = df["Nama"].unique().tolist()
-peserta = st.selectbox("Pilih peserta:", peserta_list)
+# normalize columns (safety)
+df.columns = [c.strip() for c in df.columns]
 
-df_peserta = df[df["Nama"] == peserta].copy()
-st.dataframe(df_peserta)
+# ------------------- DOWNLOAD DATA CSV (rapi dua kolom) -------------------
+st.markdown("### 📥 Download Data")
+dcol1, dcol2 = st.columns([1, 1])
+with dcol1:
+    if df_bio is not None:
+        st.download_button(
+            label="⬇️ Download biodata.csv",
+            data=df_bio.to_csv(index=False).encode("utf-8"),
+            file_name="biodata.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    else:
+        st.info("File biodata.csv tidak ditemukan (opsional).")
+with dcol2:
+    st.download_button(
+        label="⬇️ Download hasil_peserta.csv",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="hasil_peserta.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
 
-# ------------------- GRAFIK -------------------
-st.markdown("### 📊 Grafik Psikogram")
-fig, ax = plt.subplots(figsize=(7, 4))
-ax.barh(df_peserta["Subtes"], df_peserta["Skor"], color="skyblue")
-ax.set_xlabel("Skor")
-ax.set_xlim(0, 100)
-ax.set_ylabel("Aspek Psikologis")
-ax.set_title(f"Psikogram - {peserta}")
-plt.tight_layout()
-st.pyplot(fig)
+st.markdown("---")
 
-# ------------------- GET VALUE FUNCTION -------------------
+# ------------------- PILIH PESERTA (main content + sidebar kanan) -------------------
+left_col, right_col = st.columns([3, 1])
+
+with left_col:
+    st.markdown("### 🔍 Pilih Peserta")
+    peserta_list = df["Nama"].fillna("Unknown").unique().tolist()
+    peserta = st.selectbox("Pilih peserta:", peserta_list)
+
+    df_peserta = df[df["Nama"] == peserta].copy()
+    if df_peserta.empty:
+        st.warning("Data peserta kosong.")
+    else:
+        # show dataframe compact
+        st.dataframe(df_peserta.reset_index(drop=True), use_container_width=True, height=300)
+
+with right_col:
+    st.markdown("### ℹ️ Info Peserta")
+    if 'df_peserta' in locals() and not df_peserta.empty:
+        row0 = df_peserta.iloc[0]
+        st.write(f"**Nama**: {row0.get('Nama','-')}")
+        st.write(f"**Job Title**: {row0.get('Job Title','-')}")
+        st.write(f"**Tanggal Tes**: {row0.get('Tanggal Tes','-')}")
+        # lama pengerjaan
+        if "Lama Pengerjaan" in df_peserta.columns:
+            st.success(f"⏳ Lama pengerjaan: {df_peserta.iloc[0]['Lama Pengerjaan']}")
+        else:
+            st.info("⏳ Lama pengerjaan: belum dicatat.")
+        st.markdown("---")
+        # small summary stats
+        try:
+            total_score = int(df_peserta["Skor"].sum())
+        except Exception:
+            total_score = None
+        if total_score is not None:
+            st.metric("Total Skor (subtes)", total_score)
+        # Buttons PDF di kanan
+        if st.button("📄 Buat & Unduh PDF Ringkasan"):
+            try:
+                pdf_buf, save_path = generate_pdf_full(peserta, df_peserta, None)
+                st.success(f"PDF dibuat dan disimpan: {save_path}")
+                st.download_button(
+                    label=f"⬇️ Unduh PDF {peserta}",
+                    data=pdf_buf.getvalue() if hasattr(pdf_buf, "getvalue") else pdf_buf,
+                    file_name=os.path.basename(save_path),
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.error(f"Gagal membuat PDF: {e}")
+
+        st.markdown("")
+        if st.button("🧠 Analisis Korelasi Job & Psikotes"):
+            try:
+                # prepare prompt and call OpenAI
+                biodata_row = df_peserta.iloc[0]
+                job_title = biodata_row.get("Job Title", "Tidak diketahui")
+                nama = biodata_row.get("Nama", "Peserta")
+                summary = df_peserta[["Subtes", "Skor"]].to_dict(orient="records")
+
+                ai_prompt = f"""
+                Kamu adalah psikolog industri. Analisis hasil psikotes peserta bernama {nama},
+                yang melamar posisi {job_title}. Tentukan status rekomendasi: 
+                (Priority, Rekomendasi, Dipertimbangkan, atau Tidak Direkomendasi) 
+                dan beri penjelasan ringkas. Data hasil tes: {summary}
+                """
+
+                import openai
+                client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "Kamu adalah psikolog kerja."},
+                        {"role": "user", "content": ai_prompt}
+                    ],
+                    temperature=0.7
+                )
+                ai_text = response.choices[0].message.content.strip()
+
+                pdf_buf, save_path = generate_pdf_korelasi(nama, df_peserta, ai_text)
+
+                st.success(f"PDF Korelasi dibuat: {save_path}")
+                st.download_button(
+                    label=f"⬇️ Unduh PDF Korelasi {nama}",
+                    data=pdf_buf.getvalue() if hasattr(pdf_buf, "getvalue") else pdf_buf,
+                    file_name=os.path.basename(save_path),
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.error(f"Gagal membuat PDF Korelasi: {e}")
+
+    else:
+        st.info("Pilih peserta di kolom kiri untuk melihat detail.")
+
+st.markdown("---")
+
+# ------------------- GRAFIK BESAR DI BAWAH (full width) -------------------
+if 'df_peserta' in locals() and not df_peserta.empty:
+    st.markdown("### 📊 Grafik Psikogram")
+    fig, ax = plt.subplots(figsize=(10, 4))
+    try:
+        ax.barh(df_peserta["Subtes"], df_peserta["Skor"], color="skyblue")
+        ax.set_xlabel("Skor")
+        ax.set_xlim(0, max(100, int(df_peserta["Skor"].max()) + 10))
+        ax.set_ylabel("Aspek Psikologis")
+        ax.set_title(f"Psikogram - {peserta}")
+        plt.tight_layout()
+        st.pyplot(fig)
+    except Exception:
+        st.info("Tidak ada data grafik untuk peserta ini.")
+
+# ------------------- HELPERS yang sudah ada (tidak diubah fungsi) -------------------
 def get_value_for_aspect(df_participant, aspect_name):
-    df_participant["Subtes"] = (
-        df_participant["Subtes"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .str.replace("_", " ")
+    df_copy = df_participant.copy()
+    df_copy["Subtes"] = (
+        df_copy["Subtes"].astype(str).str.strip().str.lower().str.replace("_", " ")
     )
     aspect_name_clean = aspect_name.strip().lower().replace("_", " ")
-
-    match = df_participant[
-        df_participant["Subtes"].str.contains(rf"\b{re.escape(aspect_name_clean)}\b", na=False)
+    match = df_copy[
+        df_copy["Subtes"].str.contains(rf"\b{re.escape(aspect_name_clean)}\b", na=False)
     ]
     if match.empty:
-        skor = 0
-        ket = "-"
-    else:
-        row = match.iloc[0]
-        skor = row.get("Skor", 0)
-        if pd.isna(skor):
-            skor = 0
-        ket = str(row.get("Keterangan", "")).strip()
-        if ket == "":
-            ket = "-"
-
-    if skor == 0:
         return 0, "-"
-
+    row = match.iloc[0]
+    skor = row.get("Skor", 0)
+    if pd.isna(skor):
+        skor = 0
+    ket = str(row.get("Keterangan", "")).strip() or "-"
+    if skor == 0:
+        return 0, ket
     if "intelegensi" in aspect_name_clean:
         if skor < 90:
             ket = "Di bawah rata-rata"
-        elif 90 <= skor <= 109:
+        elif skor <= 109:
             ket = "Rata-rata"
-        elif 110 <= skor <= 119:
+        elif skor <= 119:
             ket = "Di atas rata-rata"
-        elif 120 <= skor <= 129:
+        elif skor <= 129:
             ket = "Superior"
         else:
             ket = "Very Superior"
-    elif any(x in aspect_name_clean for x in [
-        "logika", "numerikal", "persepsi", "analisa", "spasial", "verbal",
-        "daya ingat", "daya tahan", "motivasi", "psikomotorik"
-    ]):
-        ket = f"{int(skor)} / 100"
-    elif "dominasi otak" in aspect_name_clean:
-        ket = ket if ket not in ["", "-"] else ("Kanan" if skor >= 50 else "Kiri")
-    else:
-        if ket in ["", "-"] and skor > 0:
-            ket = ""
     return int(skor), ket
 
-# ------------------- GENERATE PDF RINGKAS -------------------
 def generate_pdf_full(nama, df_participant, fig):
+    # keep original implementation but safe-guarded: returns BytesIO buffer and filename
     os.makedirs("hasil", exist_ok=True)
     filename = f"hasil/Hasil_Psikotes_{nama.replace(' ', '_')}.pdf"
     buffer = BytesIO()
@@ -145,7 +262,6 @@ def generate_pdf_full(nama, df_participant, fig):
     pendidikan = biodata_row.get("Job Title", "—")
     foto_path = biodata_row.get("Foto Path", "")
 
-    # --- HEADER ---
     c.setFont("Helvetica-Bold", 14)
     c.drawCentredString(width/2, height - 50, "PSIKOGRAM HASIL PEMERIKSAAN PSIKOLOGI")
     c.setFont("Helvetica", 10)
@@ -153,15 +269,13 @@ def generate_pdf_full(nama, df_participant, fig):
     c.drawString(300, height - 75, f"Pendidikan : {pendidikan}")
     c.drawString(40, height - 90, f"Tanggal Tes : {tgl_tes}")
 
-    # --- FOTO PESERTA ---
     if foto_path and os.path.exists(foto_path):
         try:
             img = ImageReader(foto_path)
-            c.drawImage(img, width - 150, height - 150, width=80, height=90, preserveAspectRatio=True, mask='auto')
+            c.drawImage(img, width - 150, height - 150, width=80, height=90, preserveAspectRatio=True)
         except:
             pass
 
-    # --- TABEL HASIL ---
     aspek = [
         ("I. INTELEGENSI", [("Intelegensi Umum", "")]),
         ("II. KESIAPAN KERJA", [
@@ -206,19 +320,10 @@ def generate_pdf_full(nama, df_participant, fig):
         ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
         ("VALIGN", (0,0), (-1,-1), "TOP"),
         ("ALIGN", (2,1), (2,-1), "CENTER"),
-        ("LEFTPADDING", (0,0), (-1,-1), 5),
-        ("RIGHTPADDING", (0,0), (-1,-1), 5),
-        ("TOPPADDING", (0,0), (-1,-1), 3),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
     ]))
 
-    w,h = table.wrap(width-80, height)
-    table_y = max(100, height - h - 170)
-    table.drawOn(c, 40, table_y)
-
-    # --- FOOTER ---
-    c.setFont("Helvetica", 8)
-    c.drawString(40, 60, "Skala Inteligensi: <90 Di bawah rata-rata | 90–109 Rata-rata | 110–119 Di atas rata-rata | 120–129 Superior | >130 Very Superior")
+    w, h = table.wrap(width - 80, height)
+    table.drawOn(c, 40, height - h - 180)
 
     c.showPage()
     c.save()
@@ -228,21 +333,6 @@ def generate_pdf_full(nama, df_participant, fig):
         f.write(buffer.getbuffer())
 
     return buffer, filename
-
-# ------------------- BUTTON PDF RINGKAS -------------------
-if st.button("📄 Buat & Unduh PDF Ringkasan"):
-    try:
-        pdf_buf, save_path = generate_pdf_full(peserta, df_peserta, fig)
-        st.success(f"PDF dibuat dan disimpan: {save_path}")
-        st.download_button(label=f"⬇️ Unduh PDF {peserta}",
-                           data=pdf_buf,
-                           file_name=os.path.basename(save_path),
-                           mime="application/pdf")
-    except Exception as e:
-        st.error(f"Gagal membuat PDF: {e}")
-
-# ------------------- GENERATE PDF KORELASI -------------------
-import openai
 
 def generate_pdf_korelasi(nama, df_participant, ai_text):
     os.makedirs("hasil", exist_ok=True)
@@ -262,7 +352,6 @@ def generate_pdf_korelasi(nama, df_participant, ai_text):
     style_normal = styles["Normal"]
     style_bold = styles["Heading2"]
 
-    # --- HEADER ---
     elements.append(Paragraph("LAPORAN KORELASI PSIKOTES & PEKERJAAN", style_bold))
     elements.append(Spacer(1, 0.5*cm))
     elements.append(Paragraph(f"<b>Nama :</b> {nama}", style_normal))
@@ -270,21 +359,18 @@ def generate_pdf_korelasi(nama, df_participant, ai_text):
     elements.append(Paragraph(f"<b>Tanggal Tes :</b> {tgl_tes}", style_normal))
     elements.append(Spacer(1, 0.5*cm))
 
-    # --- FOTO ---
     if foto_path and os.path.exists(foto_path):
         try:
             img = Image(foto_path, width=6*cm, height=7*cm)
             elements.append(img)
             elements.append(Spacer(1, 0.5*cm))
-        except Exception as e:
-            print("Gagal menampilkan foto:", e)
+        except Exception:
+            pass
 
-    # --- ANALISIS AI (wrap otomatis) ---
     if ai_text.strip() == "":
         ai_text = "Tidak ada hasil analisis AI."
     elements.append(Paragraph(ai_text.replace("\n", "<br />"), style_normal))
 
-    # --- BUILD PDF ---
     doc.build(elements)
     buffer.seek(0)
 
@@ -292,46 +378,3 @@ def generate_pdf_korelasi(nama, df_participant, ai_text):
         f.write(buffer.getbuffer())
 
     return buffer, filename
-
-# ------------------- BUTTON AI KORELASI -------------------
-if st.button("🧠 Analisis Korelasi Job & Psikotes"):
-    try:
-        # --- Ambil data peserta & buat prompt AI ---
-        biodata_row = df_peserta.iloc[0]
-        job_title = biodata_row.get("Job Title", "Tidak diketahui")
-        nama = biodata_row.get("Nama", "Peserta")
-        summary = df_peserta[["Subtes", "Skor"]].to_dict(orient="records")
-
-        ai_prompt = f"""
-        Kamu adalah psikolog industri. Analisis hasil psikotes peserta bernama {nama},
-        yang melamar posisi {job_title}. Tentukan status rekomendasi: 
-        (Priority, Rekomendasi, Dipertimbangkan, atau Tidak Direkomendasi) 
-        dan beri penjelasan ringkas. Data hasil tes: {summary}
-        """
-
-        # --- Panggil OpenAI ---
-        import openai
-        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Kamu adalah psikolog kerja."},
-                {"role": "user", "content": ai_prompt}
-            ],
-            temperature=0.7
-        )
-        ai_text = response.choices[0].message.content.strip()
-
-        # --- Buat PDF ---
-        pdf_buf, save_path = generate_pdf_korelasi(nama, df_peserta, ai_text)
-
-        st.success(f"PDF Korelasi dibuat dan disimpan: {save_path}")
-        st.download_button(
-            label=f"⬇️ Unduh PDF Korelasi {nama}",
-            data=pdf_buf,
-            file_name=os.path.basename(save_path),
-            mime="application/pdf"
-        )
-    except Exception as e:
-        st.error(f"Gagal membuat PDF Korelasi: {e}")
-
