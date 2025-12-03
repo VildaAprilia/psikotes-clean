@@ -34,7 +34,7 @@ if not st.session_state["admin_logged_in"]:
         if username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
             st.session_state["admin_logged_in"] = True
             st.success("✅ Login berhasil.")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("❌ Username atau password salah.")
     st.stop()
@@ -46,7 +46,7 @@ with left_h:
 with right_h:
     if st.button("🚪 Logout"):
         st.session_state["admin_logged_in"] = False
-        st.experimental_rerun()
+        st.rerun()
 
 st.markdown("---")
 
