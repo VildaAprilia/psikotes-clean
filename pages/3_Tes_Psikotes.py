@@ -6,59 +6,55 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
+from utils.db import insert_hasil
+from utils.sheets import append_result
 from utils.durations import DURASI_CUSTOM, DEFAULT_DURATION
 
 st.set_page_config(page_title="Tes Psikotes", page_icon="🧩", layout="wide")
 
-# Jika sudah selesai
-if st.session_state.get("selesai", False):
-    st.info("Tes sudah selesai. Mengarahkan ke halaman berikutnya...")
-    st.switch_page("pages/4_Terima_Kasih.py")
-    st.stop()
-
-# Basic validation
+# ========================= VALIDASI =========================
 if "biodata" not in st.session_state or "daftar_tes" not in st.session_state:
     st.warning("⚠️ Silakan kembali untuk mengisi biodata dan memilih tes.")
     st.stop()
 
 biodata = st.session_state["biodata"]
 daftar_tes = st.session_state["daftar_tes"]
-tes_index = st.session_state.get("tes_index", 0)
 
-# Convert subtest id → module path
+if "tes_index" not in st.session_state:
+    st.session_state["tes_index"] = 0
+
+tes_index = st.session_state["tes_index"]
+
+# ========================= MAP SUBTES -> MODUL =========================
 def subtest_to_module(sub_id):
     parts = sub_id.split("_")
     if len(parts) >= 3:
         folder_candidate = f"{parts[0]}_{parts[1]}"
         sub_candidate = "_".join(parts[2:])
-        folder_path = os.path.join("soal", folder_candidate)
-        if os.path.isdir(folder_path):
+        if os.path.isdir(os.path.join("soal", folder_candidate)):
             return f"soal.{folder_candidate}.{sub_candidate}"
+
     if len(parts) >= 2:
         folder_candidate = parts[0]
         sub_candidate = "_".join(parts[1:])
-        folder_path = os.path.join("soal", folder_candidate)
-        if os.path.isdir(folder_path):
+        if os.path.isdir(os.path.join("soal", folder_candidate)):
             return f"soal.{folder_candidate}.{sub_candidate}"
+
     return f"soal.{sub_id}"
 
-# Ambil durasi subtes
+# ========================= DURASI =========================
 def get_duration_for_sub(sub_id):
     if sub_id in DURASI_CUSTOM:
         return DURASI_CUSTOM[sub_id]
     tail = sub_id.split("_")[-1]
     return DURASI_CUSTOM.get(tail, DEFAULT_DURATION)
 
-# ---------------------------------------------
-#  TIMER GLOBAL (MENJUMLAHKAN SEMUA SUBTES)
-# ---------------------------------------------
+# ========================= GLOBAL TIMER =========================
 def init_global_timer():
     if "global_timer_initialized" in st.session_state:
         return
 
-    total_minutes = 0
-    for sub in daftar_tes:
-        total_minutes += get_duration_for_sub(sub)
+    total_minutes = sum(get_duration_for_sub(sub) for sub in daftar_tes)
 
     now = datetime.now()
     st.session_state["global_start"] = now
@@ -66,23 +62,16 @@ def init_global_timer():
     st.session_state["global_total_minutes"] = total_minutes
     st.session_state["global_timer_initialized"] = True
 
-# jalankan timer global sekali
 init_global_timer()
 
-# sisa waktu global
 def remaining_seconds():
     delta = (st.session_state["global_end"] - datetime.now()).total_seconds()
     return max(0, int(delta))
 
-
-# ---------------------------------------------
-#               TAMPILKAN TIMER GLOBAL
-# ---------------------------------------------
 st_autorefresh(interval=1000, key="tick")
 
 rem = remaining_seconds()
-mins = rem // 60
-secs = rem % 60
+mins, secs = rem // 60, rem % 60
 
 st.markdown(
     f"""
@@ -96,43 +85,36 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# identitas subtes aktif
+# ========================= LOAD SOAL =========================
 current_sub = daftar_tes[tes_index]
 st.title(f"🧠 {current_sub.replace('_',' ')}")
 
-# Load module soal
 soal_list = []
 module_name = subtest_to_module(current_sub)
 
 try:
     soal_module = importlib.import_module(module_name)
 except ModuleNotFoundError:
-    st.error(f"❌ Modul soal tidak ditemukan: {module_name}")
     soal_module = None
+    st.error(f"❌ Modul soal tidak ditemukan: {module_name}")
 
-# ambil soal
 if soal_module and hasattr(soal_module, "soal_list"):
     for s in soal_module.soal_list:
         s["is_header"] = s.get("is_header", False)
         soal_list.append(s)
 
 import random
-
-# acak sekali
 order_key = f"order_{current_sub}"
 
 if order_key not in st.session_state:
-    indices = list(range(len(soal_list)))
-    random.shuffle(indices)
-    st.session_state[order_key] = indices
+    idx = list(range(len(soal_list)))
+    random.shuffle(idx)
+    st.session_state[order_key] = idx
 
-# tempat jawaban
 if "jawaban_peserta" not in st.session_state:
     st.session_state["jawaban_peserta"] = {}
 
-# ---------------------------------------------
-#           RENDER SOAL
-# ---------------------------------------------
+# ========================= RENDER SOAL =========================
 nomor_visible = 0
 indices_order = st.session_state.get(order_key, [])
 
@@ -142,7 +124,6 @@ for orig_idx in indices_order:
 
     item = soal_list[orig_idx]
 
-    # Header
     if item.get("is_header"):
         st.markdown(f"### {item['soal']}")
         continue
@@ -150,9 +131,10 @@ for orig_idx in indices_order:
     nomor_visible += 1
     st.write(f"**{nomor_visible}. {item['soal']}**")
 
-    # pilihan jawaban kosong dulu
     if "pilihan" in item and item["pilihan"]:
         pilihan = item["pilihan"]
+    elif "opsi" in item and item["opsi"]:
+        pilihan = item["opsi"]
     elif "skor" in item and isinstance(item["skor"], dict):
         pilihan = list(item["skor"].values())
     else:
@@ -171,93 +153,84 @@ for orig_idx in indices_order:
     except:
         index_param = None
 
-    if index_param is not None:
-        jawab = st.radio("Pilih jawaban:", pilihan, key=radio_key, index=index_param)
-    else:
-        jawab = st.radio("Pilih jawaban:", pilihan, key=radio_key, index=None)
-
+    jawab = st.radio("Pilih jawaban:", pilihan, key=radio_key, index=index_param)
     st.session_state["jawaban_peserta"][key] = jawab
 
     st.markdown("---")
 
-# ---------------------------------------------
-#         SIMPAN SKOR
-# ---------------------------------------------
+# ========================= HITUNG & SIMPAN KE SESSION =========================
 def save_subtest_result(sub_id):
-    os.makedirs("data", exist_ok=True)
-
     skor = 0
     keterangan = "-"
 
-    module_name = subtest_to_module(sub_id)
+    module_path = subtest_to_module(sub_id)
+
     try:
-        m = importlib.import_module(module_name)
-    except ModuleNotFoundError:
+        m = importlib.import_module(module_path)
+    except:
         m = None
 
-    # custom scoring
     if m and hasattr(m, "hitung_skor"):
         try:
             res = m.hitung_skor(st.session_state["jawaban_peserta"])
             skor = res.get("skor", 0)
-            keterangan = res.get("keterangan", "")
+            keterangan = res.get("keterangan", "-")
         except:
             skor = 0
             keterangan = "error_hitung"
     else:
         soal_temp = m.soal_list if m and hasattr(m, "soal_list") else []
-        for i, it in enumerate(soal_temp, start=1):
-            k = f"{sub_id}_q{i}"
-            user_answer = st.session_state["jawaban_peserta"].get(k)
+
+        for idx, it in enumerate(soal_temp):
+            key = f"{sub_id}_q{idx+1}"
+            ans = st.session_state["jawaban_peserta"].get(key)
 
             if "jawaban_benar" in it:
-                if user_answer == it["jawaban_benar"]:
+                if ans == it["jawaban_benar"]:
                     skor += 4
+
             elif "skor" in it and isinstance(it["skor"], dict):
                 for nilai, teks in it["skor"].items():
-                    if teks == user_answer:
-                        try:
-                            skor += int(nilai)
-                        except:
-                            pass
+                    if teks == ans:
+                        skor += int(nilai)
                         break
 
-    row = {
-        "Nama": biodata.get("Nama", ""),
-        "Job Title": biodata.get("Job Title", ""),
-        "Subtes": sub_id,
-        "Skor": skor,
-        "Keterangan": keterangan,
-        "Tanggal Tes": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
+    if "hasil_semua_subtes" not in st.session_state:
+        st.session_state["hasil_semua_subtes"] = []
 
-    path = "data/hasil_peserta.csv"
-    if os.path.exists(path):
-        try:
-            df_old = pd.read_csv(path)
-            df_new = pd.DataFrame([row])
-            df = pd.concat([df_old, df_new], ignore_index=True)
-        except:
-            df = pd.DataFrame([row])
-    else:
-        df = pd.DataFrame([row])
+    st.session_state["hasil_semua_subtes"] = [
+        h for h in st.session_state["hasil_semua_subtes"]
+        if h["subtes"] != sub_id
+    ]
 
-    df.to_csv(path, index=False)
+    st.session_state["hasil_semua_subtes"].append({
+        "subtes": sub_id,
+        "skor": skor,
+        "keterangan": keterangan
+    })
 
+# ========================= SIMPAN SEKALI KE DB + SHEETS =========================
+def simpan_semua_hasil_ke_sheets():
+    if "hasil_semua_subtes" not in st.session_state:
+        return
+    
+    nama_user = biodata.get("Nama", "")
+    job_user = biodata.get("Job Title", "")
+    tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# ---------------------------------------------
-#      JIKA WAKTU GLOBAL HABIS
-# ---------------------------------------------
+    for h in st.session_state["hasil_semua_subtes"]:
+        insert_hasil(nama_user, job_user, h["subtes"], h["skor"], h["keterangan"], tanggal)
+        append_result(nama_user, job_user, h["subtes"], h["skor"], h["keterangan"], tanggal)
+
+# ========================= WAKTU HABIS =========================
 if rem == 0:
     st.info("⏰ Waktu total habis — tes selesai.")
     save_subtest_result(current_sub)
+    simpan_semua_hasil_ke_sheets()
     st.session_state["selesai"] = True
-    st.rerun()
+    st.switch_page("pages/4_Terima_Kasih.py")
 
-
-# ---------------------------------------------
-#       NAVIGASI SUBTES
-# ---------------------------------------------
+# ========================= NAVIGASI =========================
 col1, col2, col3 = st.columns([1,2,1])
 
 with col1:
@@ -275,5 +248,6 @@ with col3:
     else:
         if st.button("✅ Selesai"):
             save_subtest_result(current_sub)
+            simpan_semua_hasil_ke_sheets()
             st.session_state["selesai"] = True
             st.switch_page("pages/4_Terima_Kasih.py")

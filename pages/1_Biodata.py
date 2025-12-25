@@ -2,6 +2,9 @@ import streamlit as st
 import os
 from datetime import datetime
 import pandas as pd
+from utils.db import init_db
+
+init_db()
 
 st.set_page_config(page_title="Biodata Peserta", page_icon="🧾", layout="centered")
 

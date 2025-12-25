@@ -120,3 +120,33 @@ soal_list = [
         }
     }
 ]
+
+SUBTES_ID = "Kecerdasan_Emosi_Kepercayaan_Diri"
+
+def hitung_skor(jawaban_peserta):
+    total = 0
+
+    for i, soal in enumerate(soal_list, start=1):
+        key = f"{SUBTES_ID}_q{i}"
+        jawaban = jawaban_peserta.get(key)
+
+        if "skor" in soal:
+            for nilai, teks in soal["skor"].items():
+                if teks == jawaban:
+                    total += int(nilai)
+                    break
+
+    # Penentuan kategori skor (boleh kamu ubah kalau ada standar sendiri)
+    if total >= 35:
+        ket = "Sangat Baik"
+    elif total >= 25:
+        ket = "Baik"
+    elif total >= 15:
+        ket = "Cukup"
+    else:
+        ket = "Kurang"
+
+    return {
+        "skor": total,
+        "keterangan": f"Tingkat Kepercayaan Diri = {ket}"
+    }

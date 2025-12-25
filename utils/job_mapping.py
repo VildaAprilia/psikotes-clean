@@ -32,16 +32,16 @@ job_mapping = {
         "Kesiapan_Kerja_Persepsi",
         "Kesiapan_Kerja_Logika",
         "Kecerdasan_Emosi_Stabilitas_Emosi",
-        "Kecerdasan_Emosi_Sosialisai",  # kept original spelling (will be normalized)
+        "Kecerdasan_Emosi_Sosialisasi",  # kept original spelling (will be normalized)
         "Kecerdasan_Emosi_Tanggung_Jawab",
         "Kepribadian_RIASEC_Model",
     ],
     "Front Desk": [
-        # "Kesiapan_Kerja_Verbal",
-        # "Kesiapan_Kerja_Daya_Ingat",
-        # "Kesiapan_Kerja_Persepsi",
-        # "Kesiapan_Kerja_Numerikal",
-        # "Kecerdasan_Emosi_Stabilitas_Emosi",
+        "Kesiapan_Kerja_Verbal",
+        "Kesiapan_Kerja_Daya_Ingat",
+        "Kesiapan_Kerja_Persepsi",
+        "Kesiapan_Kerja_Numerikal",
+        "Kecerdasan_Emosi_Stabilitas_Emosi",
         "Kecerdasan_Emosi_Kerjasama",
         "Gaya_Bekerja",
     ],
@@ -66,12 +66,12 @@ job_mapping = {
         "Dominasi_Otak",
     ],
     "Admin CRM": [
-        "Kesiapan_Kerja_Daya_Ingat",
-        "Kesiapan_Kerja_Verbal",
-        "Kesiapan_Kerja_Numerikal",
-        "Kesiapan_Kerja_Persepsi",
-        "Kecerdasan_Emosi_Tanggung_Jawab",
-        "Kecerdasan_Emosi_Sosialisai",
+        # "Kesiapan_Kerja_Daya_Ingat",
+        # "Kesiapan_Kerja_Verbal",
+        # "Kesiapan_Kerja_Numerikal",
+        # "Kesiapan_Kerja_Persepsi",
+        # "Kecerdasan_Emosi_Tanggung_Jawab",
+        "Kecerdasan_Emosi_Sosialisasi",
         "Gaya_Bekerja",
     ],
     "Mekanik": [
@@ -92,7 +92,7 @@ def _normalize_subtes_name(sub_id):
     Normalize common typos: Sosialisai -> Sosialisasi
     Return normalized id.
     """
-    if sub_id == "Kecerdasan_Emosi_Sosialisai":
+    if sub_id == "Kecerdasan_Emosi_Sosialisasi":
         return "Kecerdasan_Emosi_Sosialisasi"
     # other normalizations can be added here
     return sub_id

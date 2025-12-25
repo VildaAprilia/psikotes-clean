@@ -1,4 +1,6 @@
 import streamlit as st
+from utils.db import init_db
+init_db()
 
 # --- Konfigurasi halaman utama ---
 st.set_page_config(page_title="Dashboard Tes Psikotes", page_icon="🧠", layout="centered")
