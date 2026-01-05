@@ -70,22 +70,26 @@ soal_list = [
     }
 ]
 
-SUBTES_ID = "Kecerdasan_Emosi_Stabilitas_Emosi"
+SUBTES_ID = "Kecerdasan_Emosi_Stabilitas_Emosi"   # HARUS sama persis dengan daftar_tes
 
 def hitung_skor(jawaban_peserta):
     total = 0
 
+    # loop semua soal
     for i, soal in enumerate(soal_list, start=1):
+        
         key = f"{SUBTES_ID}_q{i}"
         jawaban = jawaban_peserta.get(key)
 
-        if "skor" in soal:
+        if not jawaban:
+            continue
+
+        if "skor" in soal and isinstance(soal["skor"], dict):
             for nilai, teks in soal["skor"].items():
                 if teks == jawaban:
                     total += int(nilai)
                     break
 
-    # Penentuan kategori skor (boleh kamu ubah kalau ada standar sendiri)
     if total >= 35:
         ket = "Sangat Baik"
     elif total >= 25:

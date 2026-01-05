@@ -72,7 +72,7 @@ job_mapping = {
         # "Kesiapan_Kerja_Persepsi",
         # "Kecerdasan_Emosi_Tanggung_Jawab",
         "Kecerdasan_Emosi_Sosialisasi",
-        "Gaya_Bekerja",
+        # "Gaya_Bekerja",
     ],
     "Mekanik": [
         "Kesiapan_Kerja_Psikomotorik",

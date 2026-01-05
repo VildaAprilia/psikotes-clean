@@ -23,6 +23,7 @@ with st.form("biodata_form"):
         ["", "Kepala Bengkel", "Kepala Mekanik", "Service Advisor", "Front Desk", 
          "Part Counter", "Kepala Dealer", "Admin CRM", "Mekanik"],
     )
+    ahass = st.text_input("Tempat Pendaftaran (Kode AHASS)")
 
     st.markdown("### 🖼️ Foto Peserta")
     st.write("Kamu bisa **unggah foto** atau **ambil langsung dari kamera** di bawah ini.")
@@ -65,6 +66,7 @@ if submitted:
             "Jurusan": jurusan,
             "No HP": no_hp,
             "Job Title": job_title,
+            "Tempat Pendaftaran": ahass,  
             "Foto Path": foto_path,
             "Tanggal Submit": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -74,20 +76,41 @@ if submitted:
         # ---- Simpan ke CSV ----
         os.makedirs("data", exist_ok=True)
         file_csv = "data/biodata.csv"
+
+        # Kolom baku biodata (biar tidak kacau tipe datanya)
+        columns = [
+            "Nama", "Email", "Usia", "Jenis Kelamin", "Pendidikan", "Jurusan",
+            "No HP", "Job Title", "Foto Path", "Tanggal Submit"
+        ]
+
         if os.path.exists(file_csv):
             df_bio = pd.read_csv(file_csv)
-            # Cek apakah nama/email sudah ada, jika ada update, jika tidak tambah
+
+            # Pastikan semua kolom ada
+            for c in columns:
+                if c not in df_bio.columns:
+                    df_bio[c] = ""
+
+            # ❗️ Penting: pastikan semua kolom bertipe string agar aman
+            df_bio = df_bio.astype(str)
+
+            # Jika data sudah ada → update
             if ((df_bio["Nama"] == nama) & (df_bio["Email"] == email)).any():
-                df_bio.loc[(df_bio["Nama"] == nama) & (df_bio["Email"] == email), :] = pd.DataFrame([biodata_dict])
+                df_bio.loc[
+                    (df_bio["Nama"] == nama) & (df_bio["Email"] == email),
+                    :
+                ] = pd.DataFrame([biodata_dict])
             else:
-                df_bio = pd.concat([df_bio, pd.DataFrame([biodata_dict])], ignore_index=True)
+                df_bio = pd.concat(
+                    [df_bio, pd.DataFrame([biodata_dict])],
+                    ignore_index=True
+                )
+
         else:
-            df_bio = pd.DataFrame([biodata_dict])
+            # Jika file belum ada → buat baru
+            df_bio = pd.DataFrame([biodata_dict], columns=columns)
 
         df_bio.to_csv(file_csv, index=False)
-
-        st.success("✅ Biodata tersimpan!")
-        st.rerun()
 
 # ---- Setelah biodata tersimpan ----
 if st.session_state.get("biodata_selesai", False):
