@@ -1,3 +1,4 @@
+# pages/3_Tes_Psikotes.py
 import streamlit as st
 import importlib
 import os
@@ -5,9 +6,10 @@ from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
 from utils.db import insert_hasil
+from utils.sheets import append_result
 from utils.durations import DURASI_CUSTOM, DEFAULT_DURATION
 
-st.set_page_config(page_title="Tes Psikotes", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="Tes Psikotes", page_icon="🧩", layout="wide")
 
 # ================= VALIDASI =================
 if "biodata" not in st.session_state or "daftar_tes" not in st.session_state:
@@ -17,14 +19,10 @@ if "biodata" not in st.session_state or "daftar_tes" not in st.session_state:
 biodata = st.session_state["biodata"]
 daftar_tes = st.session_state["daftar_tes"]
 
-if "tes_index" not in st.session_state:
-    st.session_state["tes_index"] = 0
-
-if "jawaban_peserta" not in st.session_state:
-    st.session_state["jawaban_peserta"] = {}
-
-if "hasil_semua_subtes" not in st.session_state:
-    st.session_state["hasil_semua_subtes"] = []
+st.session_state.setdefault("tes_index", 0)
+st.session_state.setdefault("jawaban_peserta", {})
+st.session_state.setdefault("hasil_semua_subtes", [])
+st.session_state.setdefault("sudah_simpan", False)
 
 tes_index = st.session_state["tes_index"]
 current_sub = daftar_tes[tes_index]
@@ -72,8 +70,8 @@ module_name = subtest_to_module(current_sub)
 
 try:
     soal_module = importlib.import_module(module_name)
-except Exception as e:
-    st.error(f"❌ Gagal memuat soal: {module_name}")
+except Exception:
+    st.error(f"❌ Modul soal tidak ditemukan: {module_name}")
     st.stop()
 
 soal_list = soal_module.soal_list
@@ -92,24 +90,25 @@ for i, soal in enumerate(soal_list, start=1):
     )
 
     key = f"{current_sub}_q{i}"
-
     st.session_state["jawaban_peserta"].setdefault(key, None)
 
     jawab = st.radio(
         "Pilih jawaban:",
         pilihan,
-        key=key
+        index=pilihan.index(st.session_state["jawaban_peserta"][key])
+        if st.session_state["jawaban_peserta"][key] in pilihan else None,
+        key=f"radio_{key}"
     )
 
     st.session_state["jawaban_peserta"][key] = jawab
     st.markdown("---")
 
-# ================= HITUNG SKOR SUBTES =================
-def hitung_dan_simpan_subtes(sub_id):
+# ================= HITUNG & SIMPAN SUBTES =================
+def save_subtest_result(sub_id):
     module = importlib.import_module(subtest_to_module(sub_id))
     hasil = module.hitung_skor(st.session_state["jawaban_peserta"])
 
-    # HAPUS HASIL LAMA SUBTES INI
+    # hapus hasil lama subtes ini
     st.session_state["hasil_semua_subtes"] = [
         h for h in st.session_state["hasil_semua_subtes"]
         if h["subtes"] != sub_id
@@ -117,24 +116,48 @@ def hitung_dan_simpan_subtes(sub_id):
 
     st.session_state["hasil_semua_subtes"].append({
         "subtes": sub_id,
-        "skor": hasil["skor"],
-        "keterangan": hasil["keterangan"]
+        "skor": hasil.get("skor", 0),
+        "keterangan": hasil.get("keterangan", "-")
     })
 
-# ================= WAKTU HABIS =================
-if sisa == 0:
-    hitung_dan_simpan_subtes(current_sub)
+# ================= SIMPAN KE DB + SHEETS (SEKALI) =================
+def simpan_semua_hasil_ke_sheets():
+    # 🔒 pengaman: jangan simpan dua kali
+    if st.session_state.get("sudah_simpan_sheets"):
+        return
+
+    if "hasil_semua_subtes" not in st.session_state:
+        return
+
+    nama_user = biodata.get("Nama", "")
+    job_user = biodata.get("Job Title", "")
+    tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     for h in st.session_state["hasil_semua_subtes"]:
+        # simpan DB (aman)
         insert_hasil(
-            biodata["Nama"],
-            biodata["Job Title"],
+            nama_user,
+            job_user,
             h["subtes"],
             h["skor"],
             h["keterangan"],
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            tanggal
         )
 
+        # simpan Sheets (1 baris per subtes)
+        append_result(
+            h["subtes"],
+            h["skor"],
+            h["keterangan"]
+        )
+
+    # ✅ tandai sudah tersimpan
+    st.session_state["sudah_simpan_sheets"] = True
+
+# ================= WAKTU HABIS =================
+if sisa == 0:
+    save_subtest_result(current_sub)
+    simpan_semua_hasil()
     st.switch_page("pages/4_Terima_Kasih.py")
 
 # ================= NAVIGASI =================
@@ -142,26 +165,18 @@ col1, col2, col3 = st.columns([1, 2, 1])
 
 with col1:
     if st.button("⬅️ Kembali") and tes_index > 0:
-        hitung_dan_simpan_subtes(current_sub)
+        save_subtest_result(current_sub)
         st.session_state["tes_index"] -= 1
         st.rerun()
 
 with col3:
     if tes_index < len(daftar_tes) - 1:
         if st.button("➡️ Lanjut"):
-            hitung_dan_simpan_subtes(current_sub)
+            save_subtest_result(current_sub)
             st.session_state["tes_index"] += 1
             st.rerun()
     else:
         if st.button("✅ Selesai"):
-            hitung_dan_simpan_subtes(current_sub)
-
-            for h in st.session_state["hasil_semua_subtes"]:
-                insert_hasil(
-                    biodata["Nama"],
-                    biodata["Job Title"],
-                    h["subtes"],
-                    h["skor"],
-                    h["keterangan"],
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                )
+            save_subtest_result(current_sub)
+            simpan_semua_hasil_ke_sheets()
+            st.switch_page("pages/4_Terima_Kasih.py")
