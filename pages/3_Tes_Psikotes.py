@@ -165,5 +165,3 @@ with col3:
                     h["keterangan"],
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 )
-
-            st.switch_page("pages/4_Terima_Kasih.py")
