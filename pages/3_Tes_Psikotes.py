@@ -104,16 +104,27 @@ for i, soal in enumerate(soal_list, start=1):
     st.markdown("---")
 
 # ================= HITUNG & SIMPAN SUBTES =================
+# ================= HITUNG & SIMPAN SUBTES (AMAN) =================
 def save_subtest_result(sub_id):
-    module = importlib.import_module(subtest_to_module(sub_id))
-    hasil = module.hitung_skor(st.session_state["jawaban_peserta"])
+    try:
+        module = importlib.import_module(subtest_to_module(sub_id))
+        # Cek apakah modul punya fungsi hitung_skor
+        if hasattr(module, "hitung_skor"):
+            hasil = module.hitung_skor(st.session_state["jawaban_peserta"])
+        else:
+            # Jika tidak ada, beri skor default
+            hasil = {"skor": 0, "keterangan": "Belum dihitung"}
+    except Exception as e:
+        # Jika error import atau eksekusi, tetap lanjut
+        hasil = {"skor": 0, "keterangan": f"Error: {e}"}
 
     # hapus hasil lama subtes ini
     st.session_state["hasil_semua_subtes"] = [
-        h for h in st.session_state["hasil_semua_subtes"]
-        if h["subtes"] != sub_id
+        h for h in st.session_state.get("hasil_semua_subtes", [])
+        if h.get("subtes") != sub_id
     ]
 
+    # simpan hasil baru
     st.session_state["hasil_semua_subtes"].append({
         "subtes": sub_id,
         "skor": hasil.get("skor", 0),
@@ -122,19 +133,18 @@ def save_subtest_result(sub_id):
 
 # ================= SIMPAN KE DB + SHEETS (SEKALI) =================
 def simpan_semua_hasil_ke_sheets():
-    # 🔒 pengaman: jangan simpan dua kali
-    if st.session_state.get("sudah_simpan_sheets"):
-        return
-
     if "hasil_semua_subtes" not in st.session_state:
         return
 
-    nama_user = biodata.get("Nama", "")
-    job_user = biodata.get("Job Title", "")
+    nama_user = st.session_state["biodata"].get("Nama", "")
+    job_user = st.session_state["biodata"].get("Job Title", "")
     tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     for h in st.session_state["hasil_semua_subtes"]:
-        # simpan DB (aman)
+        # pakai flag per subtes supaya tidak double save
+        if h.get("sudah_simpan"):
+            continue
+
         insert_hasil(
             nama_user,
             job_user,
@@ -144,15 +154,14 @@ def simpan_semua_hasil_ke_sheets():
             tanggal
         )
 
-        # simpan Sheets (1 baris per subtes)
         append_result(
             h["subtes"],
             h["skor"],
             h["keterangan"]
         )
 
-    # ✅ tandai sudah tersimpan
-    st.session_state["sudah_simpan_sheets"] = True
+        # tandai subtes ini sudah tersimpan
+        h["sudah_simpan"] = True
 
 # ================= WAKTU HABIS =================
 if sisa == 0:
@@ -161,22 +170,21 @@ if sisa == 0:
     st.switch_page("pages/4_Terima_Kasih.py")
 
 # ================= NAVIGASI =================
+# Navigasi
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col1:
-    if st.button("⬅️ Kembali") and tes_index > 0:
+    if st.button("⬅️ Kembali") and st.session_state["tes_index"] > 0:
         save_subtest_result(current_sub)
         st.session_state["tes_index"] -= 1
-        st.rerun()
 
 with col3:
-    if tes_index < len(daftar_tes) - 1:
+    if st.session_state["tes_index"] < len(daftar_tes) - 1:
         if st.button("➡️ Lanjut"):
             save_subtest_result(current_sub)
             st.session_state["tes_index"] += 1
-            st.rerun()
     else:
         if st.button("✅ Selesai"):
             save_subtest_result(current_sub)
             simpan_semua_hasil_ke_sheets()
-            st.switch_page("pages/4_Terima_Kasih.py")
+            st.switch_page("4_Terima_Kasih")
