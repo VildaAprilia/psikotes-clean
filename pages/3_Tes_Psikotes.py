@@ -106,29 +106,59 @@ for i, soal in enumerate(soal_list, start=1):
 # ================= HITUNG & SIMPAN SUBTES =================
 # ================= HITUNG & SIMPAN SUBTES (AMAN) =================
 def save_subtest_result(sub_id):
-    try:
-        module = importlib.import_module(subtest_to_module(sub_id))
-        # Cek apakah modul punya fungsi hitung_skor
-        if hasattr(module, "hitung_skor"):
-            hasil = module.hitung_skor(st.session_state["jawaban_peserta"])
-        else:
-            # Jika tidak ada, beri skor default
-            hasil = {"skor": 0, "keterangan": "Belum dihitung"}
-    except Exception as e:
-        # Jika error import atau eksekusi, tetap lanjut
-        hasil = {"skor": 0, "keterangan": f"Error: {e}"}
+    skor = 0
+    keterangan = "-"
 
-    # hapus hasil lama subtes ini
+    module_path = subtest_to_module(sub_id)
+
+    try:
+        m = importlib.import_module(module_path)
+    except Exception:
+        m = None
+
+    # Jika modul punya hitung_skor, pakai itu
+    if m and hasattr(m, "hitung_skor"):
+        try:
+            res = m.hitung_skor(st.session_state["jawaban_peserta"])
+            skor = res.get("skor", 0)
+            keterangan = res.get("keterangan", "-")
+        except Exception:
+            skor = 0
+            keterangan = "error_hitung"
+    # Kalau tidak ada hitung_skor, lakukan perhitungan manual seperti kode lama
+    else:
+        soal_temp = m.soal_list if m and hasattr(m, "soal_list") else []
+
+        for idx, it in enumerate(soal_temp):
+            key = f"{sub_id}_q{idx+1}"
+            ans = st.session_state["jawaban_peserta"].get(key)
+
+            if "jawaban_benar" in it:
+                if ans == it["jawaban_benar"]:
+                    skor += 4
+
+            elif "skor" in it and isinstance(it["skor"], dict):
+                for nilai, teks in it["skor"].items():
+                    if teks == ans:
+                        skor += int(nilai)
+                        break
+
+    # Pastikan hasil_semua_subtes ada di session
+    if "hasil_semua_subtes" not in st.session_state:
+        st.session_state["hasil_semua_subtes"] = []
+
+    # Hapus hasil lama subtes ini
     st.session_state["hasil_semua_subtes"] = [
-        h for h in st.session_state.get("hasil_semua_subtes", [])
+        h for h in st.session_state["hasil_semua_subtes"]
         if h.get("subtes") != sub_id
     ]
 
-    # simpan hasil baru
+    # Simpan hasil baru dengan flag sudah_simpan=False untuk Selesai nanti
     st.session_state["hasil_semua_subtes"].append({
         "subtes": sub_id,
-        "skor": hasil.get("skor", 0),
-        "keterangan": hasil.get("keterangan", "-")
+        "skor": skor,
+        "keterangan": keterangan,
+        "sudah_simpan": False
     })
 
 # ================= SIMPAN KE DB + SHEETS (SEKALI) =================
